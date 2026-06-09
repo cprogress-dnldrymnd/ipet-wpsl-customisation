@@ -64,7 +64,7 @@ $qualification_type = isset($_GET['qualification_type']) ? $_GET['qualification_
 $types = get_terms(
     array(
         'taxonomy' => 'wpsl_store_category',
-        'hide_empty' => false,
+        'hide_empty' => true,
         'parent' => 246
     )
 );
@@ -91,7 +91,7 @@ $output .= '</select>
 $Interests = get_terms(
     array(
         'taxonomy' => 'wpsl_store_category',
-        'hide_empty' => false,
+        'hide_empty' => true,
         'parent' => 249
     )
 );
