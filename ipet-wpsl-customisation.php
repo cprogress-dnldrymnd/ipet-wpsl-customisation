@@ -578,3 +578,72 @@ add_action( 'wp_footer', function() {
     </script>
     <?php
 }, 10 );
+
+
+// =============================================
+// CUSTOM CATEGORY DROPDOWNS -> WPSL CHECKBOX FILTER SYNC
+//   The custom Qualification dropdowns rendered by wpsl-templates/custom.php
+//   (.wpsl-input--custom-category select) are mirrored onto WPSL's built-in
+//   category checkbox filter (#wpsl-checkbox-filter), so selecting a dropdown
+//   value ticks the matching category checkbox WPSL actually filters on.
+// =============================================
+add_action( 'wp_footer', function () {
+    ?>
+    <script>
+    jQuery(document).ready(function () {
+        setTimeout(function () {
+            update__categories();
+        }, 2000);
+        jQuery('.wpsl-input--custom-category select').change(function (e) {
+            e.preventDefault();
+            $val = jQuery(this).val();
+            update__categories();
+        });
+    });
+
+    function update__categories() {
+        jQuery('#wpsl-checkbox-filter').find('input').prop('checked', false);
+        jQuery('.wpsl-input--custom-category select').each(function (index, element) {
+            $val = jQuery(this).val();
+            if ($val != '') {
+                jQuery('#wpsl-checkbox-filter').find('input[value=' + $val + ']').prop('checked', true);
+            }
+        });
+    }
+    </script>
+    <?php
+}, 10 );
+
+// =============================================
+// ELEMENTOR POPUP LOCK
+//   Makes Elementor popup #7822 non-dismissible on page-id-6565:
+//   disables overlay click + ESC key and hides the close button.
+//   Change the popup ID (7822) / page ID (6565) below to match your site.
+// =============================================
+add_action( 'wp_footer', function () {
+    ?>
+    <script>
+    jQuery(document).on('elementor/popup/show', function (event, id) {
+        // 1. DO NOT affect admins (checks if the admin bar is present)
+       //         if (jQuery('body').hasClass('admin-bar')) return;
+
+        // Only target THIS popup
+        if (id !== 7822) return;
+
+        // Only disable closing on a specific page
+        if (!jQuery('body').hasClass('page-id-6565')) return; // ← change ID
+
+        const $popup = jQuery('.elementor-popup-modal');
+
+        // ❌ Disable overlay click
+        $popup.off('click');
+
+        // ❌ Disable ESC key
+        jQuery(document).off('keydown.elementorPopup');
+
+        // ❌ Hide close button
+        $popup.find('.dialog-close-button').hide();
+    });
+    </script>
+    <?php
+}, 10 );
