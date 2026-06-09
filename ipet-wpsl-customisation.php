@@ -776,3 +776,78 @@ add_action( 'wp_footer', function () {
     </script>
     <?php
 }, 10 );
+
+
+// =============================================
+// GET STARTED FORM — 30-DAY COOKIE + GATED POPUP (#7822 on page-id-6565)
+//   Two halves of the same gate:
+//   1. Drops a `get_started_form_submitted` cookie (30-day expiry) the first
+//      time the Elementor form with DOM id `get_started_form` is submitted
+//      successfully. Elementor's `submit_success` event fires for every form,
+//      so we match on the form id.
+//   2. On page-id-6565, auto-opens Elementor popup #7822 for non-admin visitors
+//      who have NOT yet submitted (no cookie). Admins — and anyone who has
+//      already submitted or is on another page — skip the popup and get the
+//      `show--body` body class that reveals the page (kept hidden by theme CSS
+//      until then).
+//   Pairs with the ELEMENTOR POPUP LOCK block above, which makes #7822
+//   non-dismissible on the same page.
+// =============================================
+add_action( 'wp_footer', function () {
+    ?>
+    <script>
+    jQuery(document).ready(function () {
+        get_started_form();
+    });
+
+    jQuery(window).on('load', function () {
+        // Admins: never gate — just reveal the page.
+        if (jQuery('body').hasClass('admin-bar')) {
+            jQuery('body').addClass('show--body');
+            return;
+        }
+
+        var alreadySubmitted = getCookie('get_started_form_submitted') !== undefined;
+
+        if (!alreadySubmitted && jQuery('body').hasClass('page-id-6565')) {
+            // Not yet converted, on the gated page → force the popup open.
+            if (typeof elementorProFrontend !== 'undefined') {
+                elementorProFrontend.modules.popup.showPopup({ id: 7822 });
+            }
+        } else {
+            // Already converted, or any other page → reveal the page content.
+            jQuery('body').addClass('show--body');
+        }
+    });
+
+    function getCookie(name) {
+        var matches = document.cookie.match(new RegExp(
+            "(?:^|; )" + name.replace(/([\.$?*|{}\(\)\[\]\\\/\+^])/g, '\\$1') + "=([^;]*)"
+        ));
+        return matches ? decodeURIComponent(matches[1]) : undefined;
+    }
+
+    function get_started_form() {
+        // Already recorded a submission — no need to bind the listener again.
+        if (getCookie('get_started_form_submitted') !== undefined) {
+            return;
+        }
+
+        jQuery(document).on('submit_success', function (event, response) {
+            // Only react to the specific "get started" form.
+            if (event.target.id !== 'get_started_form') {
+                return;
+            }
+
+            var myDate = new Date();
+            // Expire in 30 days (30 * 24h * 60m * 60s * 1000ms).
+            myDate.setTime(myDate.getTime() + (30 * 24 * 60 * 60 * 1000));
+
+            document.cookie = 'get_started_form_submitted=true'
+                + ';expires=' + myDate.toUTCString()
+                + ';path=/;SameSite=Lax';
+        });
+    }
+    </script>
+    <?php
+}, 10 );
