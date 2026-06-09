@@ -882,8 +882,27 @@ add_action( 'wp_footer', function () {
         'order'          => 'ASC',
     ]);
 
+    // Only offer qualifications that actually have stores. The QUALIFICATION
+    // <-> wpsl_store_category SYNC (above) mirrors each qualification as a term
+    // (named after the post, under parent 249), so a qualification with no
+    // stores surfaces as an empty counterpart term. hide_empty => true drops
+    // those, leaving the titles to keep. Fail open if the query errors so the
+    // dropdown can never end up empty.
+    $stocked_qualifications = get_terms([
+        'taxonomy'   => 'wpsl_store_category',
+        'hide_empty' => true,
+        'parent'     => 249,
+        'fields'     => 'names',
+    ]);
+    $filter_by_stores = ! is_wp_error( $stocked_qualifications );
+
     $options_data = [];
     foreach ( $posts as $p ) {
+        // Skip qualifications whose counterpart store category has no stores.
+        if ( $filter_by_stores && ! in_array( $p->post_title, $stocked_qualifications, true ) ) {
+            continue;
+        }
+
         $terms = get_the_terms( $p->ID, 'qualification-category' );
 
         $cat_names = [];
