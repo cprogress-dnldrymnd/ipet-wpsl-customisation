@@ -951,6 +951,14 @@ add_action( 'wp_footer', function () {
         var $selectQual = jQuery( '#form-field-qualification_of_interest' );
         var $selectCat  = jQuery( '#form-field-qualification_category' );
 
+        // Lock the qualification field until a category is chosen. Select2 4.x
+        // reflects the native `disabled` prop, so toggling it is enough. On a
+        // single qualification page a category is pre-selected below, which
+        // leaves the field enabled.
+        function syncQualEnabled() {
+            $selectQual.prop( 'disabled', ! $selectCat.val() );
+        }
+
         var qualOptions = <?php echo wp_json_encode( $options_data, $json_flags ); ?>;
         var catOptions  = <?php echo wp_json_encode( $category_data, $json_flags ); ?>;
 
@@ -990,6 +998,9 @@ add_action( 'wp_footer', function () {
                 width: '100%',
                 dropdownParent: jQuery('#elementor-popup-modal-7822')
             });
+
+            // Apply the initial lock state once Select2 is ready.
+            syncQualEnabled();
         }, 100);
 
         // Dependent filtering: choosing a category narrows the qualification list.
@@ -1006,6 +1017,9 @@ add_action( 'wp_footer', function () {
             });
 
             $selectQual.trigger('change.select2');
+
+            // Re-lock when the category is cleared; unlock once one is chosen.
+            syncQualEnabled();
         });
     });
     </script>
