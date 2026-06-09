@@ -851,3 +851,163 @@ add_action( 'wp_footer', function () {
     </script>
     <?php
 }, 10 );
+
+
+// =============================================
+// GET STARTED POPUP (#7822) — POPULATE & PREFILL THE QUALIFICATION FORM
+//   When Elementor popup #7822 opens, fill its two <select> fields from live
+//   data:
+//     - #form-field-qualification_of_interest  ← `qualifications` posts
+//     - #form-field-qualification_category     ← `qualification-category` terms
+//   On a single qualification page the fields are pre-selected from that post
+//   (title, its category, and ACF `qualification_type` / `qualification_level`).
+//   The selects are upgraded to searchable Select2, and choosing a category
+//   filters the qualification list (each option carries its category names so
+//   the filtering is client-side).
+//
+//   Companion to the GET STARTED FORM gate (auto-opens #7822 on page-id-6565)
+//   and the ELEMENTOR POPUP LOCK (makes #7822 non-dismissible). Requires Select2
+//   to be enqueued by the theme/Elementor. Titles/term names are emitted with
+//   wp_json_encode( ... JSON_HEX_* ) so they can't break out of the inline
+//   <script>; the ACF get_field() calls are guarded with function_exists().
+// =============================================
+add_action( 'wp_footer', function () {
+
+    // 1. Qualifications (posts) + each post's category names (for client-side filtering).
+    $posts = get_posts([
+        'post_type'      => 'qualifications',
+        'posts_per_page' => -1,
+        'post_status'    => 'publish',
+        'orderby'        => 'title',
+        'order'          => 'ASC',
+    ]);
+
+    $options_data = [];
+    foreach ( $posts as $p ) {
+        $terms = get_the_terms( $p->ID, 'qualification-category' );
+
+        $cat_names = [];
+        if ( ! empty( $terms ) && ! is_wp_error( $terms ) ) {
+            foreach ( $terms as $t ) {
+                $cat_names[] = $t->name;
+            }
+        }
+
+        $options_data[] = [
+            'value'      => $p->post_title,
+            'label'      => $p->post_title,
+            'categories' => $cat_names,
+        ];
+    }
+
+    // 2. Categories (qualification-category taxonomy).
+    $terms = get_terms([
+        'taxonomy'   => 'qualification-category',
+        'hide_empty' => false,
+        'orderby'    => 'name',
+        'order'      => 'ASC',
+    ]);
+
+    $category_data = [];
+    if ( ! is_wp_error( $terms ) && ! empty( $terms ) ) {
+        foreach ( $terms as $term ) {
+            $category_data[] = [
+                'value' => $term->name,
+                'label' => $term->name,
+            ];
+        }
+    }
+
+    // 3. Current-page context (used to pre-select the fields on a single qualification).
+    $current_page_title  = '';
+    $qualification_type  = '';
+    $qualification_level = '';
+    $current_category    = '';
+
+    if ( is_singular( 'qualifications' ) ) {
+        $post_id            = get_the_ID();
+        $current_page_title = get_the_title();
+
+        // get_field() is provided by ACF; guard so the front end doesn't fatal if ACF is inactive.
+        if ( function_exists( 'get_field' ) ) {
+            $qualification_type  = get_field( 'qualification_type', $post_id );
+            $qualification_level = get_field( 'qualification_level', $post_id );
+        }
+
+        $post_terms = get_the_terms( $post_id, 'qualification-category' );
+        if ( ! empty( $post_terms ) && ! is_wp_error( $post_terms ) ) {
+            $current_category = $post_terms[0]->name;
+        }
+    }
+
+    // Hex flags stop titles/term names from breaking out of the inline <script>.
+    $json_flags = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT;
+    ?>
+    <script>
+    jQuery( document ).on( 'elementor/popup/show', function( event, id, instance ) {
+        if ( id !== 7822 ) return;
+
+        // Elementor prefixes form field ids with 'form-field-'.
+        var $selectQual = jQuery( '#form-field-qualification_of_interest' );
+        var $selectCat  = jQuery( '#form-field-qualification_category' );
+
+        var qualOptions = <?php echo wp_json_encode( $options_data, $json_flags ); ?>;
+        var catOptions  = <?php echo wp_json_encode( $category_data, $json_flags ); ?>;
+
+        var curTitle = <?php echo wp_json_encode( $current_page_title, $json_flags ); ?>;
+        var curCat   = <?php echo wp_json_encode( $current_category, $json_flags ); ?>;
+        var curType  = <?php echo wp_json_encode( $qualification_type, $json_flags ); ?>;
+        var curLevel = <?php echo wp_json_encode( $qualification_level, $json_flags ); ?>;
+
+        // Populate Qualifications (only once).
+        if ( $selectQual.length > 0 && $selectQual.find('option').length <= 1 ) {
+            jQuery.each( qualOptions, function( i, item ) {
+                $selectQual.append( jQuery('<option>', { value: item.value, text: item.label }) );
+            });
+        }
+
+        // Populate Categories (only once).
+        if ( $selectCat.length > 0 && $selectCat.find('option').length <= 1 ) {
+            jQuery.each( catOptions, function( i, item ) {
+                $selectCat.append( jQuery('<option>', { value: item.value, text: item.label }) );
+            });
+        }
+
+        // Pre-select from the current page's context.
+        if ( curTitle ) { $selectQual.val( curTitle ); }
+        if ( curCat )   { $selectCat.val( curCat ); }
+        if ( curType )  { jQuery('#form-field-qualification_type').val( curType ); }
+        if ( curLevel ) { jQuery('#form-field-qualification_level').val( curLevel ); }
+
+        // Upgrade to searchable Select2 (drop the theme's nice-select first).
+        setTimeout(function() {
+            $selectQual.next('.nice-select').remove();
+            $selectCat.next('.nice-select').remove();
+
+            jQuery('#form-field-qualification_of_interest, #form-field-qualification_category').select2({
+                placeholder: "Select an option...",
+                allowClear: true,
+                width: '100%',
+                dropdownParent: jQuery('#elementor-popup-modal-7822')
+            });
+        }, 100);
+
+        // Dependent filtering: choosing a category narrows the qualification list.
+        // Namespaced + .off() first so re-opening the popup can't stack duplicate handlers.
+        $selectCat.off('change.qualfilter').on('change.qualfilter', function() {
+            var selectedCategory = jQuery(this).val();
+
+            $selectQual.empty().append('<option value=""></option>');
+
+            jQuery.each(qualOptions, function(i, item) {
+                if ( selectedCategory === "" || ( item.categories && item.categories.includes(selectedCategory) ) ) {
+                    $selectQual.append( jQuery('<option>', { value: item.value, text: item.label }) );
+                }
+            });
+
+            $selectQual.trigger('change.select2');
+        });
+    });
+    </script>
+    <?php
+}, 10 );
