@@ -806,11 +806,29 @@ add_action( 'elementor_pro/forms/new_record', function ( $record, $handler ) {
         return;
     }
 
+    // If output has already started, setcookie() silently fails (only a PHP
+    // warning). new_record runs before the JSON response is emitted, so this
+    // shouldn't happen — but log it loudly if it ever does, otherwise the gate
+    // breaks invisibly.
+    if ( headers_sent( $file, $line ) ) {
+        error_log( "get_started_form_submitted cookie NOT set — headers already sent at {$file}:{$line}" );
+        return;
+    }
+
+    // Scope to the registrable domain so www/non-www (and any subdomain) all
+    // read the same cookie. Without this the cookie is bound to the exact host
+    // of the AJAX request, so a later host switch (e.g. a www redirect, or a
+    // Google result on the other host) silently re-gates an already-converted
+    // visitor even though their 30 days aren't up.
+    $host   = wp_parse_url( home_url(), PHP_URL_HOST );
+    $domain = preg_replace( '/^www\./', '', (string) $host );
+
     // HTTP Set-Cookie is NOT subject to Safari/iOS ITP's ~7-day cap on
     // document.cookie writes, so the 30-day lifetime actually sticks.
     setcookie( 'get_started_form_submitted', 'true', [
         'expires'  => time() + 30 * DAY_IN_SECONDS,
         'path'     => '/',
+        'domain'   => '.' . $domain, // leading dot → shared across subdomains
         'secure'   => is_ssl(),
         'httponly' => false, // the gate JS still reads it via document.cookie
         'samesite' => 'Lax',
