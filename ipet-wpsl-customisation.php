@@ -299,6 +299,104 @@ function wpsl_process_csv_import() {
 
 
 // =============================================
+// QUALIFICATION CPT  <->  wpsl_store_category SYNC
+//   Keeps a `wpsl_store_category` term (child of parent 249) in sync with each
+//   `qualifications` post: create/update the term on save, delete it on trash.
+//   The link is stored on the qualification post via meta `_linked_wpsl_term_id`.
+// =============================================
+
+/**
+ * 1. CREATE/UPDATE: Sync Qualification to wpsl_store_category
+ * Works with Gutenberg autosaves and updates.
+ */
+add_action('save_post_qualifications', 'sync_qualification_to_wpsl_term', 10, 3);
+
+function sync_qualification_to_wpsl_term($post_id, $post, $update) {
+    // Ignore autosaves and revisions
+    if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
+    if (wp_is_post_revision($post_id)) return;
+
+    // Ignore if post status is 'trash' or 'auto-draft' (prevents creating terms for empty drafts)
+    if ($post->post_status === 'trash' || $post->post_status === 'auto-draft') return;
+
+    $taxonomy = 'wpsl_store_category';
+    $term_name = $post->post_title; // Use title directly from object
+    $parent_id = 249;
+
+    // Ensure title isn't empty (Gutenberg sometimes saves empty initial drafts)
+    if (empty($term_name)) return;
+
+    $linked_term_id = get_post_meta($post_id, '_linked_wpsl_term_id', true);
+
+    if ($linked_term_id && term_exists((int)$linked_term_id, $taxonomy)) {
+        // UPDATE existing term
+        wp_update_term($linked_term_id, $taxonomy, [
+            'name' => $term_name,
+            'slug' => sanitize_title($term_name),
+            'parent' => $parent_id
+        ]);
+    } else {
+        // CREATE new term (with safety check)
+        $existing_term = term_exists($term_name, $taxonomy);
+
+        if ($existing_term) {
+            // If term exists by name, just link it
+            $term_id = is_array($existing_term) ? $existing_term['term_id'] : $existing_term;
+        } else {
+            // Create fresh
+            $result = wp_insert_term($term_name, $taxonomy, [
+                'parent' => $parent_id
+            ]);
+
+            if (is_wp_error($result)) return;
+            $term_id = $result['term_id'];
+        }
+
+        update_post_meta($post_id, '_linked_wpsl_term_id', $term_id);
+    }
+}
+
+/**
+ * 2. DELETE: Remove wpsl_store_category when Qualification is Trashed
+ * Uses 'transition_post_status' for better Gutenberg/REST API support.
+ */
+add_action('transition_post_status', 'handle_qualification_trash_wpsl', 10, 3);
+
+function handle_qualification_trash_wpsl($new_status, $old_status, $post) {
+    // Only run for 'qualifications' post type
+    if ($post->post_type !== 'qualifications') {
+        return;
+    }
+
+    // Check if the post is entering the 'trash'
+    if ($new_status === 'trash') {
+        $taxonomy = 'wpsl_store_category';
+        $parent_id = 249;
+
+        // METHOD A: Try to delete using the saved Link ID
+        $linked_term_id = get_post_meta($post->ID, '_linked_wpsl_term_id', true);
+
+        if ($linked_term_id) {
+            $term = get_term((int)$linked_term_id, $taxonomy);
+            if ($term && !is_wp_error($term)) {
+                wp_delete_term($term->term_id, $taxonomy);
+            }
+        }
+        // METHOD B: Fallback (if no link ID exists, e.g., old posts)
+        else {
+            // Find term by Name
+            $term = get_term_by('name', $post->post_title, $taxonomy);
+
+            // Only delete if it exists AND is a child of the specific parent ID (Safety)
+            if ($term && !is_wp_error($term) && (int)$term->parent === $parent_id) {
+                wp_delete_term($term->term_id, $taxonomy);
+            }
+        }
+    }
+}
+
+
+// =============================================
 // DIAMOND CENTER FEATURE
 // =============================================
 
@@ -643,6 +741,37 @@ add_action( 'wp_footer', function () {
 
         // ❌ Hide close button
         $popup.find('.dialog-close-button').hide();
+    });
+    </script>
+    <?php
+}, 10 );
+
+
+// =============================================
+// DEEP-LINK PREFILL + AUTO-SEARCH
+//   When the locator page is reached with query args, prefill the search box
+//   from ?postcode= and (if ?qualification_of_interest= is present) auto-run the
+//   search after a short delay. Pairs with the $_GET handling in
+//   wpsl-templates/custom.php that pre-selects the qualification dropdowns.
+//
+//   NOTE: the original snippet echoed $_GET['postcode'] straight into the page
+//   (reflected XSS). The value is now sanitised + esc_js()'d before output;
+//   behaviour for legitimate postcodes is unchanged.
+// =============================================
+add_action( 'wp_footer', function () {
+    ?>
+    <script>
+    jQuery(document).ready(function() {
+        <?php if ( isset( $_GET['postcode'] ) ) {
+            $wpsl_prefill_postcode = sanitize_text_field( wp_unslash( $_GET['postcode'] ) ); ?>
+            jQuery('#wpsl-search-input').val('<?php echo esc_js( $wpsl_prefill_postcode ); ?>');
+        <?php } ?>
+
+        <?php if ( isset( $_GET['qualification_of_interest'] ) ) { ?>
+            setTimeout(function() {
+                jQuery('#wpsl-search-btn').trigger('click');
+            }, 1000);
+        <?php } ?>
     });
     </script>
     <?php
