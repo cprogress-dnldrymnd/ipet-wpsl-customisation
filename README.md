@@ -22,5 +22,5 @@ A WordPress plugin that customises [WP Store Locator](https://wordpress.org/plug
 
 ## Notes
 
-- The custom template registration points at `get_stylesheet_directory() . '/wpsl-templates/custom.php'`, so the matching `custom.php` template must exist in the **active theme** (`wpsl-templates/custom.php`). This is intentional WPSL behaviour and is left as-is.
+- The custom search template (`wpsl-templates/custom.php`) is now **bundled inside this plugin**; the `wpsl_templates` registration points at `plugin_dir_path( __FILE__ ) . 'wpsl-templates/custom.php'`, so it no longer depends on a copy living in the active theme. If an old `wpsl-templates/custom.php` still exists in your theme it is now redundant and can be removed. The registered template id (`custom`) is unchanged, so the existing selection in **WPSL → Settings → Search** stays valid.
 - The CSV importer expects columns such as `name`, `email`, `tel`, `address1`, `address2`, `city`, `county`, `country`, `postcode`, `website`, `bio`, and `course 1`…`course 12`. The parent category term ID is hard-coded to `249`, and the Diamond Centre popup ID is `7730` — adjust these in the source if your site differs.
